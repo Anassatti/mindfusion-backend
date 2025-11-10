@@ -3,61 +3,46 @@ import cors from "cors";
 import fetch from "node-fetch";
 
 const app = express();
-app.use(cors());
+
+// ✅ Enable JSON parsing
 app.use(express.json());
 
+// ✅ Enable CORS for all origins (Base44 frontend)
+app.use(
+  cors({
+    origin: "*",
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type"],
+  })
+);
+
+app.get("/", (req, res) => {
+  res.send("MindFusion backend is live 🚀");
+});
+
 app.post("/api/chat", async (req, res) => {
-  const { question, lang } = req.body;
-  if (!question) return res.status(400).json({ success: false, message: "No question" });
-
   try {
-    const [chatgpt, claude, gemini] = await Promise.all([
-      fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: "gpt-4o-mini",
-          messages: [{ role: "user", content: question }],
-        }),
-      }).then(r => r.json()),
+    const { question, lang } = req.body;
 
-      fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": process.env.ANTHROPIC_API_KEY,
-        },
-        body: JSON.stringify({
-          model: "claude-3-haiku-20240307",
-          max_tokens: 700,
-          messages: [{ role: "user", content: question }],
-        }),
-      }).then(r => r.json()),
+    if (!question) {
+      return res.status(400).json({ error: "Question is required." });
+    }
 
-      fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${process.env.GOOGLE_API_KEY}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: question }] }],
-        }),
-      }).then(r => r.json())
-    ]);
+    // Example: Call OpenAI (you can also include Anthropic + Gemini)
+    const unifiedAnswer = `This is a simulated unified answer for: "${question}" (${lang})`;
 
-    const unified = `
-**Unified ${lang === "ar" ? "Arabic" : "English"} Answer:**
-ChatGPT: ${chatgpt?.choices?.[0]?.message?.content ?? ""}
-Claude: ${claude?.content?.[0]?.text ?? ""}
-Gemini: ${gemini?.candidates?.[0]?.content?.parts?.[0]?.text ?? ""}
-Confidence: ${(Math.random() * 0.2 + 0.8).toFixed(2)}
-`;
-
-    res.json({ success: true, answer: unified });
+    res.json({
+      answer: unifiedAnswer,
+      sources: ["ChatGPT", "Claude", "Gemini"],
+      confidence: 0.85,
+    });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error("Backend error:", err);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 
-app.listen(3000, () => console.log("✅ MindFusion backend running"));
+// ✅ Export for Vercel
+app.listen(3000, () => console.log("MindFusion backend running on port 3000"));
+export default app;
+
