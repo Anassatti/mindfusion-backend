@@ -3,18 +3,28 @@ import cors from "cors";
 import fetch from "node-fetch";
 
 const app = express();
-app.use(cors());
+
+// --- Middleware ---
+app.use(
+  cors({
+    origin: "*", // you can restrict to your Base44 or specific domain later
+  })
+);
 app.use(express.json());
 
-// Health Check
+// --- Health Check ---
 app.get("/", (req, res) => {
-  res.json({ message: "✅ MindFusion backend is live with real AI integrations!" });
+  res.json({
+    message: "✅ MindFusion backend is live with real AI integrations!",
+  });
 });
 
+// --- Chat Endpoint ---
 app.post("/api/chat", async (req, res) => {
   try {
     const { question, lang } = req.body;
-    if (!question) return res.status(400).json({ error: "Question is required" });
+    if (!question)
+      return res.status(400).json({ error: "Question is required" });
 
     console.log("📥 Received:", { question, lang });
     console.log("🔑 API Keys present:", {
@@ -23,9 +33,9 @@ app.post("/api/chat", async (req, res) => {
       google: !!process.env.GOOGLE_API_KEY,
     });
 
-    // --- Run all APIs in parallel ---
+    // --- Run all 3 APIs in parallel ---
     const [openaiResult, claudeResult, geminiResult] = await Promise.allSettled([
-      // 🟢 OpenAI
+      // 🟢 ChatGPT (OpenAI)
       fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -37,9 +47,9 @@ app.post("/api/chat", async (req, res) => {
           messages: [{ role: "user", content: question }],
           max_tokens: 500,
         }),
-      }).then(r => r.json()),
+      }).then((r) => r.json()),
 
-      // 🟣 Anthropic (Claude)
+      // 🟣 Claude (Anthropic)
       fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
@@ -52,11 +62,11 @@ app.post("/api/chat", async (req, res) => {
           max_tokens: 500,
           messages: [{ role: "user", content: question }],
         }),
-      }).then(r => r.json()),
+      }).then((r) => r.json()),
 
-      // 🟡 Google Gemini
+      // 🟡 Gemini (Google)
       fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${process.env.GOOGLE_API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${process.env.GOOGLE_API_KEY}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -64,7 +74,7 @@ app.post("/api/chat", async (req, res) => {
             contents: [{ parts: [{ text: question }] }],
           }),
         }
-      ).then(r => r.json()),
+      ).then((r) => r.json()),
     ]);
 
     // --- Parse results ---
@@ -74,7 +84,7 @@ app.post("/api/chat", async (req, res) => {
       gemini: { text: null, confidence: 0 },
     };
 
-    // 🟢 OpenAI
+    // 🟢 ChatGPT
     if (openaiResult.status === "fulfilled") {
       const data = openaiResult.value;
       if (data.choices?.[0]?.message?.content) {
@@ -101,14 +111,15 @@ app.post("/api/chat", async (req, res) => {
       console.log("🟡 Gemini raw:", JSON.stringify(data).substring(0, 200));
       if (data.candidates?.[0]?.content?.parts?.[0]?.text || data.output_text) {
         responses.gemini.text =
-          data.candidates?.[0]?.content?.parts?.[0]?.text || data.output_text;
+          data.candidates?.[0]?.content?.parts?.[0]?.text ||
+          data.output_text;
         responses.gemini.confidence = 90;
         console.log("✅ Gemini responded:", responses.gemini.text.substring(0, 100) + "...");
       } else console.error("❌ Gemini error:", data.error || "No content");
     } else console.error("❌ Gemini failed:", geminiResult.reason);
 
     // --- Unified Answer ---
-    const successfulResponses = Object.values(responses).filter(r => r.text);
+    const successfulResponses = Object.values(responses).filter((r) => r.text);
     if (successfulResponses.length === 0) {
       console.error("❌ ALL AI MODELS FAILED");
       return res.status(500).json({
@@ -117,7 +128,7 @@ app.post("/api/chat", async (req, res) => {
       });
     }
 
-    const unifiedText = successfulResponses.map(r => r.text).join("\n\n");
+    const unifiedText = successfulResponses.map((r) => r.text).join("\n\n");
     const avgConfidence = Math.round(
       successfulResponses.reduce((s, r) => s + r.confidence, 0) /
         successfulResponses.length
@@ -130,7 +141,7 @@ app.post("/api/chat", async (req, res) => {
       unified_confidence: avgConfidence,
     });
 
-    // --- Respond to Frontend ---
+    // --- Return Response to Frontend ---
     res.status(200).json({
       answer: unifiedText,
       confidence: avgConfidence,
@@ -146,7 +157,7 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
-// Server (for local debug)
+// --- Server (local debug mode) ---
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
