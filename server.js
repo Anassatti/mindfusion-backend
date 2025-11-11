@@ -7,7 +7,9 @@ const app = express();
 // --- Middleware ---
 app.use(
   cors({
-    origin: "*", // you can restrict to your Base44 or specific domain later
+    origin: "*", // you can later restrict to your Base44 domain
+    methods: ["POST", "GET"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 app.use(express.json());
@@ -58,7 +60,7 @@ app.post("/api/chat", async (req, res) => {
           "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
-          model: "claude-3-5-sonnet-20241022",
+          model: "claude-3-sonnet-20240229", // ✅ fixed model
           max_tokens: 500,
           messages: [{ role: "user", content: question }],
         }),
@@ -66,7 +68,7 @@ app.post("/api/chat", async (req, res) => {
 
       // 🟡 Gemini (Google)
       fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${process.env.GOOGLE_API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro-latest:generateContent?key=${process.env.GOOGLE_API_KEY}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -90,7 +92,10 @@ app.post("/api/chat", async (req, res) => {
       if (data.choices?.[0]?.message?.content) {
         responses.chatgpt.text = data.choices[0].message.content;
         responses.chatgpt.confidence = 85;
-        console.log("✅ ChatGPT responded:", responses.chatgpt.text.substring(0, 100) + "...");
+        console.log(
+          "✅ ChatGPT responded:",
+          responses.chatgpt.text.substring(0, 100) + "..."
+        );
       } else console.error("❌ ChatGPT error:", data.error || "No content");
     } else console.error("❌ ChatGPT failed:", openaiResult.reason);
 
@@ -101,7 +106,10 @@ app.post("/api/chat", async (req, res) => {
       if (data.content?.[0]?.text || data.output_text) {
         responses.claude.text = data.content?.[0]?.text || data.output_text;
         responses.claude.confidence = 88;
-        console.log("✅ Claude responded:", responses.claude.text.substring(0, 100) + "...");
+        console.log(
+          "✅ Claude responded:",
+          responses.claude.text.substring(0, 100) + "..."
+        );
       } else console.error("❌ Claude error:", data.error || "No content");
     } else console.error("❌ Claude failed:", claudeResult.reason);
 
@@ -109,14 +117,28 @@ app.post("/api/chat", async (req, res) => {
     if (geminiResult.status === "fulfilled") {
       const data = geminiResult.value;
       console.log("🟡 Gemini raw:", JSON.stringify(data).substring(0, 200));
-      if (data.candidates?.[0]?.content?.parts?.[0]?.text || data.output_text) {
+      if (
+        data.candidates?.[0]?.content?.parts?.[0]?.text ||
+        data.output_text
+      ) {
         responses.gemini.text =
           data.candidates?.[0]?.content?.parts?.[0]?.text ||
           data.output_text;
         responses.gemini.confidence = 90;
-        console.log("✅ Gemini responded:", responses.gemini.text.substring(0, 100) + "...");
+        console.log(
+          "✅ Gemini responded:",
+          responses.gemini.text.substring(0, 100) + "..."
+        );
       } else console.error("❌ Gemini error:", data.error || "No content");
     } else console.error("❌ Gemini failed:", geminiResult.reason);
+
+    // --- Fallback placeholders ---
+    Object.keys(responses).forEach((model) => {
+      if (!responses[model].text) {
+        responses[model].text = `No response from ${model}`;
+        responses[model].confidence = 0;
+      }
+    });
 
     // --- Unified Answer ---
     const successfulResponses = Object.values(responses).filter((r) => r.text);
@@ -157,14 +179,23 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
-// --- Server (local debug mode) ---
+// --- Server (for local debug mode) ---
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log("🔑 Checking API keys...");
-  console.log("  - OpenAI:", process.env.OPENAI_API_KEY ? "✅ Set" : "❌ Missing");
-  console.log("  - Anthropic:", process.env.ANTHROPIC_API_KEY ? "✅ Set" : "❌ Missing");
-  console.log("  - Google:", process.env.GOOGLE_API_KEY ? "✅ Set" : "❌ Missing");
+  console.log(
+    "  - OpenAI:",
+    process.env.OPENAI_API_KEY ? "✅ Set" : "❌ Missing"
+  );
+  console.log(
+    "  - Anthropic:",
+    process.env.ANTHROPIC_API_KEY ? "✅ Set" : "❌ Missing"
+  );
+  console.log(
+    "  - Google:",
+    process.env.GOOGLE_API_KEY ? "✅ Set" : "❌ Missing"
+  );
 });
 
 export default app;
