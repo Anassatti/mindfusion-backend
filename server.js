@@ -1,4 +1,3 @@
-// ✅ CORRECTED BACKEND CODE
 import express from "express";
 import cors from "cors";
 import fetch from "node-fetch";
@@ -7,8 +6,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Health Check
 app.get("/", (req, res) => {
-  res.json({ message: "✅ MindFusion backend is live with real AI!" });
+  res.json({ message: "✅ MindFusion backend is live with real AI integrations!" });
 });
 
 app.post("/api/chat", async (req, res) => {
@@ -23,9 +23,9 @@ app.post("/api/chat", async (req, res) => {
       google: !!process.env.GOOGLE_API_KEY,
     });
 
-    // Call all 3 AIs in parallel with error handling
+    // --- Run all APIs in parallel ---
     const [openaiResult, claudeResult, geminiResult] = await Promise.allSettled([
-      // --- 1️⃣ OpenAI (ChatGPT) ---
+      // 🟢 OpenAI
       fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -39,13 +39,13 @@ app.post("/api/chat", async (req, res) => {
         }),
       }).then(r => r.json()),
 
-      // --- 2️⃣ Anthropic (Claude) ---
+      // 🟣 Anthropic (Claude)
       fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "x-api-key": process.env.ANTHROPIC_API_KEY,
-          "anthropic-version": "2023-06-01",  // ⚠️ CRITICAL: Required header!
+          "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
           model: "claude-3-5-sonnet-20241022",
@@ -54,7 +54,7 @@ app.post("/api/chat", async (req, res) => {
         }),
       }).then(r => r.json()),
 
-      // --- 3️⃣ Google Gemini ---
+      // 🟡 Google Gemini
       fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${process.env.GOOGLE_API_KEY}`,
         {
@@ -67,70 +67,60 @@ app.post("/api/chat", async (req, res) => {
       ).then(r => r.json()),
     ]);
 
-    // Extract responses with proper error handling
+    // --- Parse results ---
     const responses = {
       chatgpt: { text: null, confidence: 0 },
       claude: { text: null, confidence: 0 },
       gemini: { text: null, confidence: 0 },
     };
 
-    // Parse ChatGPT response
+    // 🟢 OpenAI
     if (openaiResult.status === "fulfilled") {
       const data = openaiResult.value;
-      if (data.choices && data.choices[0]?.message?.content) {
+      if (data.choices?.[0]?.message?.content) {
         responses.chatgpt.text = data.choices[0].message.content;
         responses.chatgpt.confidence = 85;
-        console.log("✅ ChatGPT responded:", responses.chatgpt.text.substring(0, 50) + "...");
-      } else {
-        console.error("❌ ChatGPT error:", data.error || "No content");
-      }
-    } else {
-      console.error("❌ ChatGPT failed:", openaiResult.reason);
-    }
+        console.log("✅ ChatGPT responded:", responses.chatgpt.text.substring(0, 100) + "...");
+      } else console.error("❌ ChatGPT error:", data.error || "No content");
+    } else console.error("❌ ChatGPT failed:", openaiResult.reason);
 
-    // Parse Claude response
+    // 🟣 Claude
     if (claudeResult.status === "fulfilled") {
       const data = claudeResult.value;
-      if (data.content && data.content[0]?.text) {
-        responses.claude.text = data.content[0].text;
+      console.log("🟣 Claude raw:", JSON.stringify(data).substring(0, 200));
+      if (data.content?.[0]?.text || data.output_text) {
+        responses.claude.text = data.content?.[0]?.text || data.output_text;
         responses.claude.confidence = 88;
-        console.log("✅ Claude responded:", responses.claude.text.substring(0, 50) + "...");
-      } else {
-        console.error("❌ Claude error:", data.error || "No content");
-      }
-    } else {
-      console.error("❌ Claude failed:", claudeResult.reason);
-    }
+        console.log("✅ Claude responded:", responses.claude.text.substring(0, 100) + "...");
+      } else console.error("❌ Claude error:", data.error || "No content");
+    } else console.error("❌ Claude failed:", claudeResult.reason);
 
-    // Parse Gemini response
+    // 🟡 Gemini
     if (geminiResult.status === "fulfilled") {
       const data = geminiResult.value;
-      if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
-        responses.gemini.text = data.candidates[0].content.parts[0].text;
+      console.log("🟡 Gemini raw:", JSON.stringify(data).substring(0, 200));
+      if (data.candidates?.[0]?.content?.parts?.[0]?.text || data.output_text) {
+        responses.gemini.text =
+          data.candidates?.[0]?.content?.parts?.[0]?.text || data.output_text;
         responses.gemini.confidence = 90;
-        console.log("✅ Gemini responded:", responses.gemini.text.substring(0, 50) + "...");
-      } else {
-        console.error("❌ Gemini error:", data.error || "No content");
-      }
-    } else {
-      console.error("❌ Gemini failed:", geminiResult.reason);
-    }
+        console.log("✅ Gemini responded:", responses.gemini.text.substring(0, 100) + "...");
+      } else console.error("❌ Gemini error:", data.error || "No content");
+    } else console.error("❌ Gemini failed:", geminiResult.reason);
 
-    // Get successful responses
-    const successfulResponses = Object.values(responses).filter(r => r.text !== null);
-
+    // --- Unified Answer ---
+    const successfulResponses = Object.values(responses).filter(r => r.text);
     if (successfulResponses.length === 0) {
-      console.error("❌ ALL AIs FAILED");
-      return res.status(500).json({ 
-        error: "All AI providers failed to respond",
-        responses 
+      console.error("❌ ALL AI MODELS FAILED");
+      return res.status(500).json({
+        error: "All AI models failed to respond",
+        responses,
       });
     }
 
-    // Create unified answer from first successful response
-    const unifiedText = successfulResponses[0].text;
+    const unifiedText = successfulResponses.map(r => r.text).join("\n\n");
     const avgConfidence = Math.round(
-      successfulResponses.reduce((sum, r) => sum + r.confidence, 0) / successfulResponses.length
+      successfulResponses.reduce((s, r) => s + r.confidence, 0) /
+        successfulResponses.length
     );
 
     console.log("📊 Results:", {
@@ -140,26 +130,23 @@ app.post("/api/chat", async (req, res) => {
       unified_confidence: avgConfidence,
     });
 
-    // Return in format expected by frontend
+    // --- Respond to Frontend ---
     res.status(200).json({
       answer: unifiedText,
-      confidence: avgConfidence,  // 0-100 scale!
-      responses: responses,
-      unified: {
-        text: unifiedText,
-        confidence: avgConfidence,
-      },
+      confidence: avgConfidence,
+      responses,
+      unified: { text: unifiedText, confidence: avgConfidence },
     });
-
   } catch (error) {
     console.error("🔴 Error in /api/chat:", error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: error.message || "Internal Server Error",
       details: error.stack,
     });
   }
 });
 
+// Server (for local debug)
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
